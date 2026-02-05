@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Ensure correct working directory
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+echo "[pre-commit] Running ESLint..."
+
+# Detect package manager (yarn → pnpm → npm)
+if command -v yarn >/dev/null 2>&1; then
+  PM="yarn"
+elif command -v pnpm >/dev/null 2>&1; then
+  PM="pnpm"
+else
+  PM="npm"
+fi
+
+# Run ESLint and capture output
+ESLINT_OUTPUT=$($PM eslint . --max-warnings=0 2>&1)
+ESLINT_EXIT=$?
+
+if [ $ESLINT_EXIT -ne 0 ]; then
+  echo ""
+  echo "❌ ESLint errors detected — commit aborted."
+  echo "-------------------------------------------"
+  echo "$ESLINT_OUTPUT"
+  echo "-------------------------------------------"
+  exit 1
+fi
+
+echo "✓ ESLint passed successfully!"
+exit 0
