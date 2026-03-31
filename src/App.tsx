@@ -1,38 +1,52 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { APITester } from "./APITester";
+import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TopNavBar } from './components/TopNavBar';
+import { ProgressIndicator } from './components/ProgressIndicator';
+import { TrustBadges } from './components/TrustBadges';
+import { BasicInfoForm } from './components/forms/BasicInfoForm';
+import { SuccessModal } from './components/SuccessModal';
 import "./index.css";
 
-import logo from "./logo.svg";
-import reactLogo from "./react.svg";
+const queryClient = new QueryClient();
 
 export function App() {
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
   return (
-    <div className="container mx-auto p-8 text-center relative z-10">
-      <div className="flex justify-center items-center gap-8 mb-8">
-        <img
-          src={logo}
-          alt="Bun Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#646cffaa] scale-120"
-        />
-        <img
-          src={reactLogo}
-          alt="React Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#61dafbaa] [animation:spin_20s_linear_infinite]"
-        />
+    <QueryClientProvider client={queryClient}>
+      <div className="bg-surface text-on-surface min-h-screen selection:bg-primary-container selection:text-on-primary-container font-manrope">
+        <TopNavBar />
+        
+        <main className="max-w-7xl mx-auto px-6 py-12 md:py-20">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
+            
+            <div className="lg:col-span-5 space-y-12">
+              <div className="space-y-4">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-primary-fixed text-on-primary-fixed text-xs font-bold uppercase tracking-widest">
+                  Step 01
+                </span>
+                <h1 className="text-5xl font-extrabold tracking-tight text-on-surface leading-tight">
+                  Let's start with the <span className="text-primary">basics</span>.
+                </h1>
+                <p className="text-on-surface-variant text-lg leading-relaxed max-w-md">
+                  We need a few details to begin your identity verification journey. Your data is encrypted and handled with bank-grade security.
+                </p>
+              </div>
+              
+              <ProgressIndicator />
+              <TrustBadges />
+            </div>
+
+            <div className="lg:col-span-7">
+              <BasicInfoForm onSuccess={() => setShowSuccessModal(true)} />
+            </div>
+
+          </div>
+        </main>
+        
+        <SuccessModal isVisible={showSuccessModal} />
       </div>
-      <Card>
-        <CardHeader className="gap-4">
-          <CardTitle className="text-3xl font-bold">Bun + React</CardTitle>
-          <CardDescription>
-            Edit <code className="rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono">src/App.tsx</code> and save to
-            test HMR
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <APITester />
-        </CardContent>
-      </Card>
-    </div>
+    </QueryClientProvider>
   );
 }
 
