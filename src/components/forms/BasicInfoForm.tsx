@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { submitBasicInfo, BasicInformationRequest } from '../../lib/api';
+import { submitBasicInfo, type BasicInformationRequest } from '../../lib/api';
 
 interface BasicInfoFormProps {
   onSuccess: () => void;
