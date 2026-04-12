@@ -357,3 +357,16 @@ export async function getApplicationAudit(applicationId: string): Promise<ApiRes
   if (!response.ok) throw new Error(await parseApiError(response));
   return response.json();
 }
+
+/**
+ * [ADMIN] Re-triggers AI analysis for a historical record.
+ */
+export async function retriggerKYC(applicationId: string): Promise<ApiResponse> {
+  await ensureAuth();
+  const response = await fetch(`${API_BASE_URL}/kyc/application/${applicationId}/retrigger`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return response.json();
+}

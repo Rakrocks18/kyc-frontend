@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getApplicationDetails, updateApplicationStatus, getApplicationAudit } from '../lib/api';
+import { getApplicationDetails, updateApplicationStatus, getApplicationAudit, retriggerKYC } from '../lib/api';
 import { useState, useEffect } from 'react';
 const AI_PIPELINE_SEQUENCE = [
   "[SYS] AI Pipeline Initialized. Requesting resources...",
@@ -108,6 +108,22 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
     }
   });
 
+  const [retriggering, setRetriggering] = useState(false);
+  const handleRetrigger = async () => {
+    try {
+      setRetriggering(true);
+      await retriggerKYC(applicationId);
+      // Give small delay for DB to update status
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['application-detail', applicationId] });
+        setRetriggering(false);
+      }, 1000);
+    } catch (error: any) {
+      alert(`Retrigger failed: ${error.message}`);
+      setRetriggering(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -147,7 +163,10 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
               <h1 className="text-3xl font-black text-on-surface tracking-tight">
                 {app.formData?.firstName} {app.formData?.lastName}
               </h1>
-              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${app.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                app.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 
+                app.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 
+                'bg-amber-100 text-amber-700'}`}>
                 {app.status.replace(/_/g, ' ')}
               </span>
             </div>
@@ -214,9 +233,23 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
               <h3 className="font-bold text-emerald-900 flex items-center gap-2">
                 <span className="material-symbols-outlined">fingerprint</span> Identity Mapping Result
               </h3>
-              <div className="flex items-center gap-2 bg-emerald-100 px-3 py-1 rounded-full">
-                <div className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></div>
-                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-tighter">AI Verified</span>
+              <div className="flex items-center gap-2">
+                {app.status === 'REJECTED' ? (
+                  <div className="flex items-center gap-2 bg-red-100 px-3 py-1 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-red-600"></div>
+                    <span className="text-[10px] font-black text-red-800 uppercase tracking-tighter">Validation Failed</span>
+                  </div>
+                ) : (app.status === 'MANUAL_REVIEW' || app.status === 'APPROVED') ? (
+                   <div className="flex items-center gap-2 bg-emerald-100 px-3 py-1 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-emerald-600"></div>
+                    <span className="text-[10px] font-black text-emerald-800 uppercase tracking-tighter">AI Processed</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-emerald-100 px-3 py-1 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></div>
+                    <span className="text-[10px] font-black text-emerald-800 uppercase tracking-tighter">AI Processing</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-8">
@@ -244,8 +277,57 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
                   <div className="absolute -left-6 top-0 bottom-0 w-px bg-slate-100"></div>
                   <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-6">ML Extracted (OCR)</h4>
                   <div className="space-y-6">
-                    {app.extractedData?.fields ? (
+                    {/* New: AI Executive Summary */}
+                    {(app.extractedData?.summary || app.extractedData?.reason) && (
+                      <div className="p-6 bg-slate-900 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden group">
+                         <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <span className="material-symbols-outlined text-emerald-400 text-4xl">psychology</span>
+                         </div>
+                         <h5 className="text-[10px] font-black text-emerald-400 uppercase mb-4 flex items-center gap-2">
+                           <span className="material-symbols-outlined text-sm">auto_awesome</span> AI Executive Summary
+                         </h5>
+                         <p className="text-sm text-slate-200 font-medium leading-relaxed relative z-10">
+                           {app.extractedData.summary || app.extractedData.reason}
+                         </p>
+                      </div>
+                    )}
+
+                    {/* New: Triple Comparison Matrix */}
+                    {app.extractedData?.matrix && Object.keys(app.extractedData.matrix).length > 0 ? (
+                      <div className="overflow-hidden border border-slate-100 rounded-2xl">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter">Identity Field</th>
+                              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter">Extracted (Document)</th>
+                              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter">Submitted (Form)</th>
+                              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-tighter">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {Object.entries(app.extractedData.matrix).map(([key, m]: [string, any]) => (
+                              <tr key={key} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-4 text-xs font-bold text-slate-500">{key.replace(/([A-Z])/g, ' $1').toUpperCase()}</td>
+                                <td className="px-4 py-4 text-sm font-black text-on-surface">{m.extracted || 'N/A'}</td>
+                                <td className="px-4 py-4 text-sm font-medium text-slate-600">{m.form || 'N/A'}</td>
+                                <td className="px-4 py-4">
+                                  {m.status === 'MATCH' ? (
+                                    <span className="text-emerald-500 material-symbols-outlined text-lg">check_circle</span>
+                                  ) : (
+                                    <span className="text-red-500 material-symbols-outlined text-lg">cancel</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : app.extractedData?.fields ? (
                       <div className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                           <span className="material-symbols-outlined text-amber-500 text-sm">history</span>
+                           <p className="text-[10px] font-black text-amber-600 uppercase italic">Historical Extraction Data</p>
+                        </div>
                         {Object.entries(app.extractedData.fields).map(([key, field]: [string, any]) => (
                           <div key={key} className="flex justify-between items-end border-b border-dashed border-slate-100 pb-2">
                              <div>
@@ -253,40 +335,87 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
                                <p className="font-bold text-on-surface">{field.value || 'N/A'}</p>
                              </div>
                              <div className="text-right">
-                               <p className="text-[10px] font-black text-emerald-500 uppercase">Match</p>
+                               <p className={`text-[10px] font-black uppercase ${field.confidence > 0.8 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                 {field.confidence > 0.8 ? 'Match' : 'Low Conf'}
+                               </p>
                                <p className="text-[10px] font-bold text-slate-400">{(field.confidence * 100).toFixed(0)}%</p>
                              </div>
                           </div>
                         ))}
                       </div>
-                    ) : app.extractedData?.ocr_raw_text ? (
-                      <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50 italic text-sm text-emerald-900 line-clamp-6">
-                        {app.extractedData.ocr_raw_text}
+                    ) : (app.status === 'VERIFICATION_IN_PROGRESS' || app.status === 'DOCUMENTS_PENDING') ? (
+                      <div className="space-y-4 animate-pulse">
+                         <div className="h-4 bg-slate-100 rounded w-3/4"></div>
+                         <div className="h-4 bg-slate-100 rounded w-1/2"></div>
+                         <div className="h-4 bg-slate-100 rounded w-2/3"></div>
+                         <p className="text-emerald-600 italic text-sm mt-4">AI extraction in progress...</p>
                       </div>
                     ) : (
-                      <p className="text-slate-400 italic text-sm">Waiting for AI extraction results...</p>
-                    )}
-
-                    {app.extractedData?.reason && (
-                      <div className="mt-8 p-4 bg-slate-900 rounded-2xl border border-slate-800">
-                         <h5 className="text-[10px] font-black text-emerald-400 uppercase mb-2 flex items-center gap-1">
-                           <span className="material-symbols-outlined text-xs">gavel</span> AI Verification Reasoning
-                         </h5>
-                         <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                           {app.extractedData.reason}
-                         </p>
+                      <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-200 flex flex-col items-center text-center shadow-inner">
+                        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4 border border-slate-100">
+                          <span className="material-symbols-outlined text-slate-300 text-3xl">database_off</span>
+                        </div>
+                        <p className="font-bold text-slate-900">Historical Record Format</p>
+                        <p className="text-xs text-slate-500 max-w-xs mt-1 mb-6 italic">This record was processed with an older pipeline. Detailed extraction results are currently missing.</p>
+                        
+                        <button 
+                          onClick={handleRetrigger}
+                          disabled={retriggering}
+                          className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
+                            retriggering 
+                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                              : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-900/20 active:scale-95'
+                          }`}
+                        >
+                          {retriggering ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div>
+                              <span>Initializing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="material-symbols-outlined text-sm">replay</span>
+                              <span>Re-run AI Analysis</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     )}
 
-                    <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-sm">
-                        {(app.riskScore || 0).toFixed(0)}
+                    <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm ${app.extractedData?.confidenceScore > 80 ? 'bg-emerald-600' : 'bg-amber-600'}`}>
+                        {(app.extractedData?.confidenceScore || 0).toFixed(0)}
                       </div>
                       <div>
-                        <p className="text-[10px] font-black text-slate-500 uppercase">Trust Score</p>
-                        <p className="text-xs font-bold text-on-surface">System Reliability Confidence</p>
+                        <p className="text-[10px] font-black text-slate-500 uppercase">AI Data Integrity</p>
+                        <p className="text-xs font-bold text-on-surface">Extraction Confidence Score</p>
                       </div>
                     </div>
+
+                    {/* New: Bulleted Rejection Reasons */}
+                    {app.extractedData?.discrepancies?.length > 0 && (
+                      <div className="mt-8 p-6 bg-red-50 rounded-[2rem] border border-red-100 relative overflow-hidden">
+                         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                            <span className="material-symbols-outlined text-red-900 text-6xl">report</span>
+                         </div>
+                         <h5 className="text-[10px] font-black text-red-600 uppercase mb-4 flex items-center gap-2">
+                           <span className="material-symbols-outlined text-sm">warning</span> Verification Discrepancies
+                         </h5>
+                         <ul className="space-y-3">
+                           {app.extractedData.discrepancies.map((d: any, idx: number) => (
+                             <li key={idx} className="flex items-start gap-4">
+                               <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0"></div>
+                               <div className="text-sm">
+                                 <span className="font-bold text-red-900">{d.field}:</span>{' '}
+                                 <span className="text-red-700">{d.extractedValue}</span>
+                                 <span className="mx-2 text-red-300">vs</span>
+                                 <span className="text-slate-500">{d.formValue}</span>
+                               </div>
+                             </li>
+                           ))}
+                         </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -324,29 +453,29 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
 
            <AIPipelineDebugger status={app.status} />
 
-           <div className={`p-8 rounded-[2.5rem] text-white overflow-hidden relative shadow-2xl ${app.riskScore > 30 ? 'bg-gradient-to-br from-red-600 to-red-900 shadow-red-900/10' : 'bg-gradient-to-br from-emerald-600 to-emerald-900 shadow-emerald-900/10'}`}>
+            <div className={`p-8 rounded-[2.5rem] text-white overflow-hidden relative shadow-2xl transition-all duration-500 ${app.riskScore > 30 ? 'bg-gradient-to-br from-red-600 to-red-900 shadow-red-900/10' : 'bg-gradient-to-br from-emerald-600 to-emerald-900 shadow-emerald-900/10'}`}>
               <div className="relative z-10">
-                <h3 className="text-lg font-black uppercase tracking-widest mb-6 opacity-70">Security Analysis</h3>
+                <h3 className="text-lg font-black uppercase tracking-widest mb-6 opacity-70">Identity Fraud Risk</h3>
                 <div className="flex items-center gap-6 mb-8">
                    <div className="text-7xl font-black italic">{(app.riskScore || 0).toFixed(0)}<span className="text-2xl not-italic ml-1">%</span></div>
                    <div>
                      <p className="text-sm font-bold bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/20">
-                        {app.riskScore > 30 ? 'High Risk Delta' : 'Low Integrity Risk'}
+                        {app.riskScore > 60 ? 'Critical Risk' : app.riskScore > 30 ? 'High Risk Delta' : 'Low Integrity Risk'}
                      </p>
                    </div>
                 </div>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center text-sm font-bold bg-white/5 p-4 rounded-2xl border border-white/10">
                     <span className="opacity-70">Biometric Match</span>
-                    <span className="text-emerald-400">
+                    <span className={(app.extractedData?.face_match_confidence !== undefined && app.extractedData.face_match_confidence < 0.4) ? 'text-red-400' : 'text-emerald-400'}>
                       {app.extractedData?.face_match_confidence !== undefined 
-                        ? `${(app.extractedData.face_match_confidence).toFixed(1)}%` 
+                        ? `${(app.extractedData.face_match_confidence * 100).toFixed(1)}%` 
                         : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm font-bold bg-white/5 p-4 rounded-2xl border border-white/10">
                     <span className="opacity-70">AML Screening</span>
-                    <span className={app.extractedData?.aml_flags?.length > 0 ? 'text-red-400' : 'text-emerald-400'}>
+                    <span className={(app.extractedData?.aml_flags?.length > 0 || app.status === 'REJECTED') && app.extractedData?.aml_flags?.length > 0 ? 'text-red-400' : 'text-emerald-400'}>
                       {app.extractedData?.aml_flags?.length > 0 
                         ? `Flagged (${app.extractedData.aml_flags.length})` 
                         : 'Clean'}
