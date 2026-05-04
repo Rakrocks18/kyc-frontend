@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getApplicationDetails, updateApplicationStatus, getApplicationAudit, retriggerKYC } from '../lib/api';
+import { getApplicationDetails, updateApplicationStatus, getApplicationAudit, retriggerKYC, updateVerificationFields } from '../lib/api';
 import { useState, useEffect } from 'react';
+
 const AI_PIPELINE_SEQUENCE = [
   "[SYS] AI Pipeline Initialized. Requesting resources...",
   "[ML] Dispatching image to Document Service (FastAPI)...",
@@ -81,6 +82,10 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
   const [remarks, setRemarks] = useState('');
   const [showAudit, setShowAudit] = useState(false);
 
+  // Track inline editing
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
   const { data: response, isLoading } = useQuery({
     queryKey: ['application-detail', applicationId],
     queryFn: () => getApplicationDetails(applicationId),
@@ -107,6 +112,36 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
       alert(`Status update failed: ${error.message}`);
     }
   });
+
+  // Mutation for manual field corrections
+  const fieldMutation = useMutation({
+    mutationFn: ({ verificationId, fieldMatches }: { verificationId: string; fieldMatches: any }) =>
+      updateVerificationFields(verificationId, fieldMatches),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['application-detail', applicationId] });
+      setEditingField(null);
+    },
+    onError: (error: any) => {
+      alert(`Field update failed: ${error.message}`);
+    }
+  });
+
+  const startEditing = (docId: string, fieldKey: string, value: string) => {
+    setEditingField(`${docId}-${fieldKey}`);
+    setEditValue(value);
+  };
+
+  const saveEdit = (verificationId: string, fieldKey: string, currentFieldMatches: any) => {
+    const updatedMatches = {
+      ...currentFieldMatches,
+      [fieldKey]: {
+        ...currentFieldMatches[fieldKey],
+        extracted: editValue,
+        status: 'MATCH' // Mark as match after manual correction
+      }
+    };
+    fieldMutation.mutate({ verificationId, fieldMatches: updatedMatches });
+  };
 
   const [retriggering, setRetriggering] = useState(false);
   const handleRetrigger = async () => {
@@ -350,23 +385,60 @@ export function AdminReviewDetail({ applicationId, onBack }: AdminReviewDetailPr
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {Object.entries(doc.documentVerification.fieldMatches).map(([key, m]: [string, any]) => (
-                                  <tr key={key} className="hover:bg-slate-50/50 transition-colors">
-                                    <td className="px-6 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest">{key.replace(/([A-Z])/g, ' $1')}</td>
-                                    <td className="px-6 py-4 text-xs font-black text-slate-900">{m.extracted || m.value || (typeof m === 'boolean' ? (m ? 'YES' : 'NO') : m) || 'N/A'}</td>
-                                    <td className="px-6 py-4 text-center">
-                                      {m.status === 'MATCH' || m === true || m.matches === true ? (
-                                        <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-600">
-                                          <span className="material-symbols-outlined text-sm font-black">check</span>
-                                        </div>
-                                      ) : (
-                                        <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600">
-                                          <span className="material-symbols-outlined text-sm font-black">close</span>
-                                        </div>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
+                                {Object.entries(doc.documentVerification.fieldMatches).map(([key, m]: [string, any]) => {
+                                  const fieldId = `${doc.id}-${key}`;
+                                  const isEditing = editingField === fieldId;
+                                  const extractedValue = m.extracted || m.value || (typeof m === 'boolean' ? (m ? 'YES' : 'NO') : m) || 'N/A';
+
+                                  return (
+                                    <tr key={key} className="hover:bg-slate-50/50 transition-colors group/row">
+                                      <td className="px-6 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest">{key.replace(/([A-Z])/g, ' $1')}</td>
+                                      <td className="px-6 py-4">
+                                        {isEditing ? (
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              autoFocus
+                                              type="text"
+                                              value={editValue}
+                                              onChange={(e) => setEditValue(e.target.value)}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') saveEdit(doc.documentVerification.id, key, doc.documentVerification.fieldMatches);
+                                                if (e.key === 'Escape') setEditingField(null);
+                                              }}
+                                              className="w-full bg-slate-50 border-emerald-500 border-2 rounded-lg px-2 py-1 text-xs font-black focus:ring-0 outline-none"
+                                            />
+                                            <button 
+                                              onClick={() => saveEdit(doc.documentVerification.id, key, doc.documentVerification.fieldMatches)}
+                                              disabled={fieldMutation.isPending}
+                                              className="text-emerald-600 hover:scale-110 transition-transform"
+                                            >
+                                              <span className="material-symbols-outlined text-sm font-black">save</span>
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div 
+                                            onClick={() => startEditing(doc.id, key, extractedValue)}
+                                            className="cursor-text group-hover/row:bg-slate-100 px-2 py-1 rounded transition-colors flex items-center justify-between"
+                                          >
+                                            <span className="text-xs font-black text-slate-900">{extractedValue}</span>
+                                            <span className="material-symbols-outlined text-xs text-slate-300 opacity-0 group-hover/row:opacity-100">edit</span>
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-6 py-4 text-center">
+                                        {(m.status === 'MATCH' || m === true || m.matches === true) ? (
+                                          <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-600">
+                                            <span className="material-symbols-outlined text-sm font-black">check</span>
+                                          </div>
+                                        ) : (
+                                          <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600">
+                                            <span className="material-symbols-outlined text-sm font-black">close</span>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>

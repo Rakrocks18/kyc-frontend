@@ -370,3 +370,14 @@ export async function retriggerKYC(applicationId: string): Promise<ApiResponse> 
   if (!response.ok) throw new Error(await parseApiError(response));
   return response.json();
 }
+
+export async function updateVerificationFields(verificationId: string, fieldMatches: any): Promise<ApiResponse> {
+  await ensureAuth();
+  const response = await fetch(`${API_BASE_URL}/kyc/verification/${verificationId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+    body: JSON.stringify({ fieldMatches }),
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return response.json();
+}
