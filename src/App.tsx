@@ -1,53 +1,101 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TopNavBar } from './components/TopNavBar';
 import { ProgressIndicator } from './components/ProgressIndicator';
 import { TrustBadges } from './components/TrustBadges';
 import { BasicInfoForm } from './components/forms/BasicInfoForm';
+import { DocumentUploadForm } from './components/forms/DocumentUploadForm';
+import { BiometricVerificationForm } from './components/forms/BiometricVerificationForm';
 import { SuccessModal } from './components/SuccessModal';
+import { getActiveKyc, submitKyc, STORAGE_FORM_ID, STORAGE_APP_ID } from './lib/api';
+import { MyApplications } from './components/MyApplications';
 import "./index.css";
 
-const queryClient = new QueryClient();
+import { Router, Switch, Route, Redirect } from 'wouter';
+import { CustomerPortal } from './components/CustomerPortal';
+import { AdminPortal } from './components/AdminPortal';
+import { LoginScreen } from './components/LoginScreen';
 
-export function App() {
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error: any) => {
+        // Only retry if it's potentially transient
+        if (error.message.includes('Failed to fetch')) return failureCount < 3;
+        return false;
+      },
+    },
+  },
+});
+
+export function ConnectionStatus() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isBackendUp, setIsBackendUp] = useState(true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Monitor global query errors for "Failed to fetch"
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event?.query.state.error) {
+        const error = event.query.state.error as any;
+        if (error.message.includes('Failed to fetch')) {
+          setIsBackendUp(false);
+          // Auto-resolve after 5 seconds to re-attempt check
+          setTimeout(() => setIsBackendUp(true), 5000);
+        }
+      }
+    });
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      unsubscribe();
+    };
+  }, []);
+
+  if (isOnline && isBackendUp) return null;
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <div className="bg-surface text-on-surface min-h-screen selection:bg-primary-container selection:text-on-primary-container font-manrope">
-        <TopNavBar />
-        
-        <main className="max-w-7xl mx-auto px-6 py-12 md:py-20">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
-            
-            <div className="lg:col-span-5 space-y-12">
-              <div className="space-y-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-primary-fixed text-on-primary-fixed text-xs font-bold uppercase tracking-widest">
-                  Step 01
-                </span>
-                <h1 className="text-5xl font-extrabold tracking-tight text-on-surface leading-tight">
-                  Let's start with the <span className="text-primary">basics</span>.
-                </h1>
-                <p className="text-on-surface-variant text-lg leading-relaxed max-w-md">
-                  We need a few details to begin your identity verification journey. Your data is encrypted and handled with bank-grade security.
-                </p>
-              </div>
-              
-              <ProgressIndicator />
-              <TrustBadges />
-            </div>
-
-            <div className="lg:col-span-7">
-              <BasicInfoForm onSuccess={() => setShowSuccessModal(true)} />
-            </div>
-
-          </div>
-        </main>
-        
-        <SuccessModal isVisible={showSuccessModal} />
+    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 duration-500">
+      <div className="bg-red-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-bold border-2 border-white/20 backdrop-blur-md">
+        <span className="material-symbols-outlined animate-pulse">{isOnline ? 'dns' : 'cloud_off'}</span>
+        <span>{!isOnline ? 'No Internet Connection' : 'Server Connection Lost'}</span>
       </div>
+    </div>
+  );
+}
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ConnectionStatus />
+      <Router>
+        <Switch>
+          <Route path="/login" component={LoginScreen} />
+          <Route path="/admin" component={AdminPortal} />
+          <Route path="/customer">
+            <CustomerPortal />
+          </Route>
+          <Route>
+            {/* Default redirect based on token presence */}
+            {() => {
+              const token = localStorage.getItem('auth_token');
+              const role = localStorage.getItem('user_role');
+              if (!token) return <Redirect to="/login" />;
+              if (role === 'ADMIN' || role === 'KYC_ANALYST') return <Redirect to="/admin" />;
+              return <Redirect to="/customer" />;
+            }}
+          </Route>
+        </Switch>
+      </Router>
     </QueryClientProvider>
   );
 }
 
 export default App;
+
