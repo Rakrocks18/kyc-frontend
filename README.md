@@ -3,7 +3,11 @@
 To install dependencies:
 
 ```bash
+
+powershell -c "irm bun.sh/install.ps1|iex"
+
 bun install
+
 ```
 
 To start a development server:
