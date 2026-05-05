@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { logout } from '../lib/api';
 import { AdminDashboard } from './AdminDashboard';
 import { AdminReviewDetail } from './AdminReviewDetail';
+import { AdminRulesConfig } from './AdminRulesConfig';
 
 export function AdminPortal() {
   const [, setLocation] = useLocation();
@@ -82,6 +83,13 @@ export function AdminPortal() {
               <span>Verified Users</span>
             </button>
             <button 
+              onClick={() => handleSidebarClick('rules', 'ALL')}
+              className={`flex items-center gap-3 px-4 py-3 transition-colors rounded-xl ${activeTab === 'rules' ? 'text-emerald-700 bg-white shadow-sm font-bold' : 'text-slate-600 hover:text-emerald-600 hover:translate-x-1 duration-300'}`}
+            >
+              <span className="material-symbols-outlined">gavel</span>
+              <span>Verification Protocols</span>
+            </button>
+            <button 
               onClick={() => handleSidebarClick('risk', 'MANUAL_REVIEW')}
               className={`flex items-center gap-3 px-4 py-3 transition-colors rounded-xl ${activeTab === 'risk' ? 'text-emerald-700 bg-white shadow-sm font-bold' : 'text-slate-600 hover:text-emerald-600 hover:translate-x-1 duration-300'}`}
             >
@@ -126,6 +134,8 @@ export function AdminPortal() {
         <main className="flex-1 ml-64 p-10 bg-surface">
           {selectedId ? (
             <AdminReviewDetail applicationId={selectedId} onBack={() => setSelectedId(null)} />
+          ) : activeTab === 'rules' ? (
+            <AdminRulesConfig />
           ) : (
             <AdminDashboard onReview={setSelectedId} initialStatusFilter={dashboardFilter} />
           )}

@@ -371,12 +371,42 @@ export async function retriggerKYC(applicationId: string): Promise<ApiResponse> 
   return response.json();
 }
 
+export interface User {
+  id: string;
+  email: string;
+  role: 'CUSTOMER' | 'TELLER' | 'KYC_ANALYST' | 'TENANT_ADMIN' | 'ADMIN';
+  tenantId?: string;
+}
+
 export async function updateVerificationFields(verificationId: string, fieldMatches: any): Promise<ApiResponse> {
   await ensureAuth();
   const response = await fetch(`${API_BASE_URL}/kyc/verification/${verificationId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
     body: JSON.stringify({ fieldMatches }),
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return response.json();
+}
+
+export async function getMyTenantConfig(): Promise<ApiResponse> {
+  await ensureAuth();
+  const response = await fetch(`${API_BASE_URL}/tenants/config/my`, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return response.json();
+}
+
+export async function updateMyTenantConfig(config: any): Promise<ApiResponse> {
+  await ensureAuth();
+  const response = await fetch(`${API_BASE_URL}/tenants/config/my`, {
+    method: 'PUT',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${localStorage.getItem('auth_token')}` 
+    },
+    body: JSON.stringify(config),
   });
   if (!response.ok) throw new Error(await parseApiError(response));
   return response.json();
